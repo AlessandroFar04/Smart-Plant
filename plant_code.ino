@@ -1,9 +1,6 @@
-// secret information for Blynk cloud communication
-
-#define BLYNK_AUTH_TOKEN ""
-#define BLYNK_TEMPLATE_ID ""
-#define BLYNK_TEMPLATE_NAME ""
-
+#define BLYNK_AUTH_TOKEN "8O-w6CUUPYsijpyTujfliEGM0OyrcZPl"
+#define BLYNK_TEMPLATE_ID "TMPL4jbib8RiK"
+#define BLYNK_TEMPLATE_NAME "SMART PLANT"
 #define BLYNK_PRINT Serial
 
 #include <WiFi.h>
@@ -13,55 +10,62 @@
 #include <TimeLib.h>
 #include <WidgetRTC.h>
 
-// constant definitions, building objects and internal timers
+// definizione costanti, costruzione oggetti e timers
 
 const int LDR = 34;
 UltraSonicDistanceSensor distanceSensor(19, 21);
 DHT dht(25, DHT22);
 
-const float empty = 29.10;     // Empty water tank measurement
-const float full = 19.84;      // Full water tank measurement
+const float empty = 29.10;     // serbatoio VUOTO
+const float full = 19.84;      // serbatoio PIENO
 
 const int maxLuce = 850;
 const int minLuce = 0;
 
 BlynkTimer timer;
-WidgetRTC rtc;        // to sinchronize local date when sending debug messages
+WidgetRTC rtc;        // per avere ora da Blynk
 
 
-// connection setup and timer definitions
+// connessione al cloud blynk e ripartizione delle fasce temporali
 
 void setup() {
+  // pilotaggio dht22 ON al setup
+  pinMode(23, OUTPUT);
+  digitalWrite(23, HIGH);
+  delay(100);
   dht.begin();
-  Blynk.begin(BLYNK_AUTH_TOKEN, "YOUR SSID", "YOUR PSSW", "blynk.cloud", 80);
-  
 
-  timer.setInterval(360000L, leggiDHT22);                     // 6 minutes
-  timer.setInterval(420000L, leggiLuce);                      // 7 minutes
 
-  timer.setInterval(540000L, leggiUmiditaTerreno);            // 9 minutes
-  timer.setInterval(1080000L, leggiSerbatoio);                // 18 minutes
+  Blynk.begin(BLYNK_AUTH_TOKEN, "***REMOVED***", "***REMOVED***", "blynk.cloud", 80);
   
-  timer.setInterval(86400000L, innaffia);                     // 24 hours
+  // setting di tutti i timer di attivazione delle funzioni
+
+  timer.setInterval(360000L, leggiDHT22);                     // 6 minuti
+  timer.setInterval(420000L, leggiLuce);                      // 7 minuti
+
+  timer.setInterval(540000L, leggiUmiditaTerreno);            // 9 minuti
+  timer.setInterval(1080000L, leggiSerbatoio);                // 18 minuti
+  
+  timer.setInterval(86400000L, innaffia);                     // 24 ore
 
 }
 
 BLYNK_CONNECTED() {
-  rtc.begin();
+  rtc.begin(); // sincronizza orario da server Blynk
 }
 
 void innaffia(){
   if(leggiUmiditaTerreno() < 41){
-    
+    // creo stringa con timestamp + codice errore
     char buf[64];
     snprintf(buf, sizeof(buf),
              "[%02d/%02d %02d:%02d] Accensione pompa...",
              day(), month(), hour(), minute());
 
-    // sending to widget Terminal (V5)
+    // invio al widget Terminal (V5)
     Blynk.virtualWrite(V5, buf);
     digitalWrite(12, HIGH);
-    delay(5000);                
+    delay(5000);                // visto quanta poca acqua gli arriva, più o meno equivale a 3/4 di bicchiere d'acqua
     digitalWrite(12, LOW);
   }
 }
@@ -71,14 +75,20 @@ void leggiDHT22() {
   float humidity = dht.readHumidity();
 
   if (isnan(temperature) || isnan(humidity)) {
-    
+    // creo stringa con timestamp + codice errore
     char buf[64];
     snprintf(buf, sizeof(buf),
-             "[%02d/%02d %02d:%02d] Errore DHT22",
+             "[%02d/%02d %02d:%02d] Errore DHT22, reset...",
              day(), month(), hour(), minute());
 
-    // sending to widget Terminal (V5)
+    // invio al widget Terminal (V5)
     Blynk.virtualWrite(V5, buf);
+
+    // avvio procedura di reset dell'alimentazione
+    digitalWrite(23, LOW);
+    delay(1000);
+    digitalWrite(23, HIGH);
+
     return;
   }
   Blynk.virtualWrite(V0, temperature);
@@ -87,7 +97,7 @@ void leggiDHT22() {
 
 int leggiUmiditaTerreno(){
 
-  // min-max measurements taken during tests
+  // valore massimo rilevato empiricamente da moisture sensor: 2500 e minimo 980
 
   int raw = analogRead(32);
   raw = map(raw, 980, 2510, 0, 100);
@@ -97,13 +107,13 @@ int leggiUmiditaTerreno(){
   Blynk.virtualWrite(V2, raw);
 
   if(raw < 36){
-    
+    // creo stringa con timestamp + codice errore
     char buf[100];
     snprintf(buf, sizeof(buf),
              "[%02d/%02d %02d:%02d] Terreno troppo asciutto! Controlla la pompa!",
              day(), month(), hour(), minute());
 
-    // sending to widget Terminal (V5)
+    // invio al widget Terminal (V5)
     Blynk.virtualWrite(V5, buf);
     Blynk.logEvent("terreno_asciutto", "terra troppo secca, controlla che la pompa funzioni correttamente");
   }
@@ -131,33 +141,33 @@ void leggiSerbatoio(){
              "[%02d/%02d %02d:%02d] Lettura livello serbatoio errata!",
              day(), month(), hour(), minute());
 
-    // sending to widget Terminal (V5)
+    // invio al widget Terminal (V5)
     Blynk.virtualWrite(V5, buf);
     return;
   }
-  
+  // calcolo il rapporto e poi la percentuale
   livello = ((empty - distanza) / (empty - full)) * 100;
   livello = constrain(livello, 0, 100);
   Blynk.virtualWrite(V4, livello);
 
   if(livello < 25){
-      
+      // creo stringa con timestamp + codice errore
     char buf[70];
     snprintf(buf, sizeof(buf),
              "[%02d/%02d %02d:%02d] Livello serbatoio basso!",
              day(), month(), hour(), minute());
 
-    // sending to widget Terminal (V5)
+    // invio al widget Terminal (V5)
     Blynk.virtualWrite(V5, buf);
     Blynk.logEvent("serbatoio_basso", "Livello dell'acqua basso, rabbocca!");
   }
   
 }
 
-// CALLBACK FUNCTIONS
+// FUNZIONI DI CALLBACK
 
 BLYNK_WRITE(V5) {
-  String cmd = param.asStr();   // received from widget terminal (V5)
+  String cmd = param.asStr();   // testo ricevuto dal terminale
 
   if (cmd.equalsIgnoreCase("DIST")) {
     float d = distanceSensor.measureDistanceCm();
@@ -185,6 +195,13 @@ BLYNK_WRITE(V5) {
   if(cmd.equalsIgnoreCase("DHT")){
     char buf[40];
       snprintf(buf, sizeof(buf), "Temp: %.2f | hum: %.2f", dht.readTemperature(), dht.readHumidity());
+      
+      if(isnan(dht.readTemperature()) || isnan(dht.readHumidity())) {
+        strcat(buf, " | reset...");
+        digitalWrite(23, LOW);
+        delay(1000);
+        digitalWrite(23, HIGH);
+      }
       Blynk.virtualWrite(V5, buf);
       return;
   }
