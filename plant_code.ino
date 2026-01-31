@@ -36,7 +36,39 @@ void setup() {
   dht.begin();
 
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, "***REMOVED***", "***REMOVED***", "blynk.cloud", 80);
+  WiFi.begin("YOURSSID", "SSIDPASSWORD");
+
+  unsigned long startAttempt = millis();
+  const unsigned long timeout = 10000; // 10 secondi
+
+  // Attesa connessione WiFi con timeout
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - startAttempt > timeout) {
+      softwareReset();
+    }
+    delay(100);
+  }
+
+  // Configurazione Blynk (NON bloccante)
+  Blynk.config(
+    BLYNK_AUTH_TOKEN,
+    "blynk.cloud",
+    80
+  );
+
+  startAttempt = millis();
+
+  // Attesa connessione Blynk con timeout
+  while (!Blynk.connected()) {
+    Blynk.run();
+
+    if (millis() - startAttempt > timeout) {
+      softwareReset();
+    }
+
+    delay(100);
+  }
+
   
   // setting di tutti i timer di attivazione delle funzioni
 
@@ -52,6 +84,10 @@ void setup() {
 
 BLYNK_CONNECTED() {
   rtc.begin(); // sincronizza orario da server Blynk
+}
+
+void softwareReset(){
+  ESP.restart();
 }
 
 void innaffia(){
@@ -100,9 +136,15 @@ int leggiUmiditaTerreno(){
   // valore massimo rilevato empiricamente da moisture sensor: 2500 e minimo 980
 
   int raw = analogRead(32);
-  raw = map(raw, 980, 2510, 0, 100);
+  
+  // SENSORE NON FUNZIONANTE
+  raw = map(raw, 0, 250, 0, 100);
   raw = constrain(raw, 0, 100);
-  raw = (raw - 100) * (-1);
+
+  // SENSORE FUNZIONANTE  
+  /*raw = map(raw, 980, 2510, 0, 100);
+  raw = constrain(raw, 0, 100);
+  raw = (raw - 100) * (-1);*/
   
   Blynk.virtualWrite(V2, raw);
 
